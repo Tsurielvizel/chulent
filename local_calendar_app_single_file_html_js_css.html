@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Local Calendar — Hebrew dates in cells</title>
+  <style>
+    :root{
+      --bg:#0f172a; --panel:#111827; --muted:#94a3b8; --text:#e5e7eb;
+      --accent:#22c55e; --accent-2:#3b82f6; --danger:#ef4444; --today:#f59e0b;
+      --card:#0b1220; --shadow:0 10px 30px rgba(0,0,0,.35); --radius:16px;
+      --hebrew-small-size:12px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:linear-gradient(180deg, var(--bg), #0b1220 40%, #050a14 100%);
+      color:var(--text); font:500 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+      letter-spacing:.2px;
+    }
+    .app{max-width:1100px; margin:24px auto; padding:20px;}
+    header.appbar{display:flex; align-items:center; justify-content:space-between; background:var(--panel); padding:14px 16px; border-radius:var(--radius); box-shadow:var(--shadow);}
+    .brand{display:flex; align-items:center; gap:12px}
+    .brand h1{font-size:20px; margin:0}
+    .nav{display:flex; align-items:center; gap:8px}
+    button.icon{background:#0b1220; border:1px solid #1f2937; color:var(--text); padding:8px 10px; border-radius:12px; cursor:pointer}
+    .shell{display:grid; grid-template-columns: 2fr 1fr; gap:18px; margin-top:18px;}
+    @media (max-width:900px){ .shell{grid-template-columns:1fr} }
+    .calendar{background:var(--panel); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px;}
+    .weekdays, .grid{display:grid; grid-template-columns:repeat(7, 1fr); gap:8px}
+    .weekdays{font-size:12px; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:.9px}
+    .day{position:relative; border:1px solid #1f2937; background:var(--card); min-height:90px; border-radius:12px; padding:8px; cursor:pointer;}
+    .day:hover{transform: translateY(-1px); border-color:#334155}
+    .day .date{font-size:12px; color:var(--muted)}
+    .day.outside{opacity:.45}
+    .day.today{border-color: var(--today)}
+    .day.today .date{color: var(--today); font-weight:700}
+    .day.selected{outline:2px solid var(--accent-2)}
+    .dot{position:absolute; bottom:8px; left:8px; width:8px; height:8px; border-radius:50%; background:var(--accent)}
+    .panel{background:var(--panel); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; display:flex; flex-direction:column; min-height:300px}
+    .panel h2{margin:0 0 10px 0; font-size:18px}
+    .panel .sub{color:var(--muted); font-size:13px; margin-bottom:12px}
+    ul#event-list{list-style:none; padding:0; margin:0 0 12px 0; display:flex; flex-direction:column; gap:8px;}
+    .event{display:flex; gap:10px; align-items:flex-start; background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:10px;}
+    .time{font-weight:700; font-size:12px; color:#c7d2fe; min-width:54px}
+    .title{font-weight:600}
+    .notes{color:var(--muted); font-size:13px}
+    .btn{padding:8px 12px; border-radius:10px; border:1px solid #1f2937; background:#0b1220; color:var(--text); cursor:pointer}
+    .btn.primary{background:var(--accent-2); border-color:transparent; color:white; font-weight:700}
+    .btn.danger{background:transparent; border-color:var(--danger); color:var(--danger)}
+    form#event-form{display:grid; grid-template-columns: 90px 1fr; gap:8px; align-items:center; margin-top:4px}
+    form#event-form input, form#event-form textarea{width:100%; background:#0b1220; color:var(--text); border:1px solid #1f2937; border-radius:10px; padding:10px; font:inherit; outline:none}
+    form#event-form textarea{min-height:70px; resize:vertical}
+    .validation{margin:12px 0 0; padding:10px 12px; background:#052e1a; border:1px solid #134e4a; color:#bbf7d0; border-radius:10px; font-size:13px; white-space:pre-line}
+    .validation.fail{background:#3a0d0d; border-color:#7f1d1d; color:#fecaca}
+
+    /* New: Hebrew text in cells */
+    .hebrew-small{display:block; margin-top:8px; font-size:var(--hebrew-small-size); color:var(--muted); line-height:1.1; min-height:1.3em}
+    .hebrew-small.error{color:var(--danger)}
+    .hebrew-small.loading{font-style:italic}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="appbar">
+      <div class="brand">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="18" rx="3" ry="3" stroke="#3b82f6" stroke-width="2"></rect>
+          <path d="M3 10h18" stroke="#3b82f6" stroke-width="2"></path>
+        </svg>
+        <h1><span class="month" id="month-label">—</span></h1>
+      </div>
+      <div class="nav">
+        <button class="icon" id="prev" title="Previous month">◀</button>
+        <button class="icon" id="today" title="Jump to today">Today</button>
+        <button class="icon" id="next" title="Next month">▶</button>
+      </div>
+    </header>
+
+    <div id="validation-output" class="validation" aria-live="polite">Validation will appear here…</div>
+
+    <div class="shell">
+      <section class="calendar" aria-label="Calendar">
+        <div class="weekdays">
+          <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+        </div>
+        <div id="calendar-grid" class="grid" role="grid" aria-readonly="true"></div>
+      </section>
+
+      <aside class="panel" aria-label="Event details">
+        <h2 id="selected-date-label">Select a date</h2>
+        <div id="hebrew-date" class="sub" aria-live="polite"></div>
+        <div class="sub">Click a day to view or add events.</div>
+        <ul id="event-list"></ul>
+        <form id="event-form">
+          <label for="event-time">Time</label>
+          <input type="time" id="event-time" />
+          <label for="event-title">Title</label>
+          <input type="text" id="event-title" placeholder="e.g., Team sync" required maxlength="120" />
+          <label for="event-notes">Notes</label>
+          <textarea id="event-notes" placeholder="Optional"></textarea>
+          <div class="form-actions">
+            <button class="btn" type="button" id="clear-events" title="Delete all events for selected day">Delete All</button>
+            <div class="spacer"></div>
+            <button class="btn" type="reset">Reset</button>
+            <button class="btn primary" type="submit">Save Event</button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    // ================= Utilities & State (mostly unchanged) =================
+    const STORAGE_KEY = 'calendar.events.v1';
+    function storageAvailable(){
+      try{ const x = '__cal_test__' + Math.random(); localStorage.setItem(x, x); localStorage.removeItem(x); return true; }catch(e){ return false; }
+    }
+    const hasLocalStorage = storageAvailable();
+    const memoryStore = {_data:{}, getItem(k){return this._data[k] ?? null}, setItem(k,v){this._data[k]=String(v)}, removeItem(k){delete this._data[k]}};
+    const store = hasLocalStorage ? localStorage : memoryStore;
+
+    const today = new Date();
+    function atStartOfMonth(d){ const x = new Date(d.getFullYear(), d.getMonth(), 1); x.setHours(0,0,0,0); return x; }
+    function daysInMonth(year, month){ return new Date(year, month+1, 0).getDate(); }
+    function pad(n){return String(n).padStart(2,'0')}
+    function toKey(date){ return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}` }
+    function fromKey(key){ const [y,m,d] = key.split('-').map(Number); return new Date(y, m-1, d); }
+    function monthLabel(date){ return date.toLocaleDateString(undefined, {month:'long', year:'numeric'}) }
+    function isSameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate() }
+
+    const state = {
+      currentMonth: atStartOfMonth(today),
+      selectedKey: null,
+      events: loadEvents(),
+      hebCache: {} // cache structure: key -> { status:'done'|'error'|'loading', value:string, promise:Promise }
+    };
+
+    function loadEvents(){
+      const raw = store.getItem(STORAGE_KEY);
+      if(!raw) return {};
+      try{ return JSON.parse(raw) || {}; }catch(e){ return {}; }
+    }
+    function persist(){ store.setItem(STORAGE_KEY, JSON.stringify(state.events)); }
+
+    // ================= DOM refs =================
+    const grid = document.getElementById('calendar-grid');
+    const monthEl = document.getElementById('month-label');
+    const prevBtn = document.getElementById('prev');
+    const nextBtn = document.getElementById('next');
+    const todayBtn = document.getElementById('today');
+
+    const labelEl = document.getElementById('selected-date-label');
+    const hebrewEl = document.getElementById('hebrew-date');
+    const listEl = document.getElementById('event-list');
+    const form = document.getElementById('event-form');
+    const timeInput = document.getElementById('event-time');
+    const titleInput = document.getElementById('event-title');
+    const notesInput = document.getElementById('event-notes');
+    const clearBtn = document.getElementById('clear-events');
+    const vOut = document.getElementById('validation-output');
+
+    function vwrite(msg, pass=true){
+      if(pass){ vOut.classList.remove('fail'); } else { vOut.classList.add('fail'); }
+      vOut.textContent = msg;
+    }
+
+    // ================= Calendar build & cell rendering =================
+    function buildCalendar(){
+      grid.innerHTML = '';
+      const m0 = state.currentMonth;
+      const firstWeekday = new Date(m0.getFullYear(), m0.getMonth(), 1).getDay();
+      const totalDays = daysInMonth(m0.getFullYear(), m0.getMonth());
+      const prevMonthDays = daysInMonth(m0.getFullYear(), m0.getMonth()-1);
+      const lead = firstWeekday;
+      const trail = 42 - (lead + totalDays);
+      monthEl.textContent = monthLabel(m0);
+
+      // Leading days
+      for(let i=lead-1;i>=0;i--){
+        const dateNum = prevMonthDays - i;
+        const d = new Date(m0.getFullYear(), m0.getMonth()-1, dateNum);
+        grid.appendChild(dayCell(d, true));
+      }
+      // Current month
+      for(let day=1; day<=totalDays; day++){
+        const d = new Date(m0.getFullYear(), m0.getMonth(), day);
+        grid.appendChild(dayCell(d, false));
+      }
+      // Trailing days
+      for(let i=1;i<=trail;i++){
+        const d = new Date(m0.getFullYear(), m0.getMonth()+1, i);
+        grid.appendChild(dayCell(d, true));
+      }
+    }
+
+    function dayCell(date, outside){
+      const key = toKey(date);
+      const hasEvents = !!(state.events[key] && state.events[key].length);
+      const el = document.createElement('div');
+      el.className = 'day' + (outside ? ' outside' : '') + (isSameDay(date, today) ? ' today' : '');
+      el.setAttribute('role','gridcell');
+      el.setAttribute('tabindex','0');
+      el.dataset.key = key;
+
+      // Create inner structure: date number + hebrew small text below
+      const dateDiv = document.createElement('div');
+      dateDiv.className = 'date';
+      dateDiv.textContent = date.getDate();
+      const hebDiv = document.createElement('div');
+      hebDiv.className = 'hebrew-small';
+      hebDiv.textContent = ''; // will be filled with Loading / actual hebrew / error
+
+      el.appendChild(dateDiv);
+      el.appendChild(hebDiv);
+      if(hasEvents){ const dot = document.createElement('div'); dot.className='dot'; el.appendChild(dot); }
+
+      // Event handlers
+      el.addEventListener('click', ()=> selectDate(key));
+      el.addEventListener('keydown', (e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); selectDate(key);} });
+
+      // Kick off hebrew fetch for this cell (cached)
+      setHebrewForCell(hebDiv, key);
+
+      // If this key is currently selected, mark it
+      if(state.selectedKey===key){ el.classList.add('selected'); }
+      return el;
+    }
+
+    // ================= Hebcal integration (shared, cached) =================
+    /**
+     * fetchHebrewForKey:
+     * - Uses state.hebCache to avoid duplicate requests.
+     * - On first call for a key creates a promise that fetches from Hebcal and caches result or error.
+     * - Retries once with alternative URL if response is missing .hebrew.
+     * - Returns a promise that resolves to { ok:true, text: '20 Adar 5784' } or { ok:false }.
+     *
+     * Note: Before each actual fetch we write a short purpose line to the validation box (keeps plan step 2).
+     */
+    function fetchHebrewForKey(key){
+      // Return cached result if available (either final or in-progress)
+      const cache = state.hebCache[key];
+      if(cache){
+        // if final, resolve immediately; if promise exists, return it
+        if(cache.promise) return cache.promise;
+        return Promise.resolve({ ok: cache.status === 'done', text: cache.value ?? null });
+      }
+
+      // Create a promise and store to avoid duplicate fetches
+      const p = (async ()=>{
+        // Purpose message before fetch
+        try{
+          const d = fromKey(key);
+          const human = d.toLocaleDateString(undefined, {year:'numeric', month:'long', day:'numeric'});
+          vwrite(`Fetching Hebrew date for ${human} (sent to Hebcal API)...`);
+        }catch(e){
+          vwrite('Fetching Hebrew date (preparing request)...');
+        }
+
+        // helper
+        async function tryFetchUrl(url){
+          try{
+            const resp = await fetch(url, { method: 'GET' });
+            if(!resp.ok) return null;
+            const j = await resp.json();
+            return j;
+          }catch(err){
+            return null;
+          }
+        }
+
+        const [gy, gm, gd] = key.split('-').map(Number);
+        const base = 'https://www.hebcal.com/converter';
+        const url1 = `${base}?cfg=json&gy=${gy}&gm=${gm}&gd=${gd}&g2h=1`;
+        let json = await tryFetchUrl(url1);
+
+        if(json && typeof json.hebrew === 'string' && json.hebrew.trim().length > 0){
+          // cache and return
+          state.hebCache[key] = { status:'done', value: json.hebrew };
+          return { ok:true, text: json.hebrew };
+        }
+
+        // retry once with alternative date param
+        const url2 = `${base}?cfg=json&date=${key}&g2h=1`;
+        json = await tryFetchUrl(url2);
+        if(json && typeof json.hebrew === 'string' && json.hebrew.trim().length > 0){
+          state.hebCache[key] = { status:'done', value: json.hebrew };
+          return { ok:true, text: json.hebrew };
+        }
+
+        // failure
+        state.hebCache[key] = { status:'error', value: null };
+        return { ok:false };
+      })();
+
+      // Store the in-progress promise so concurrent callers share it
+      state.hebCache[key] = { status:'loading', value:null, promise: p };
+      // Once settled, remove promise from cache entry to allow quick direct resolution next time
+      p.then(res=>{
+        state.hebCache[key].status = res.ok ? 'done' : 'error';
+        state.hebCache[key].value = res.ok ? res.text : null;
+        delete state.hebCache[key].promise;
+      }).catch(()=>{
+        state.hebCache[key].status = 'error';
+        state.hebCache[key].value = null;
+        delete state.hebCache[key].promise;
+      });
+      return p;
+    }
+
+    /**
+     * setHebrewForCell(hebDiv, key)
+     * - Immediately shows the loading indicator and then populates hebDiv with the result or error.
+     * - Uses fetchHebrewForKey which has built-in caching and retry.
+     */
+    async function setHebrewForCell(hebDiv, key){
+      if(!hebDiv) return;
+      // Keep exact loading text required
+      hebDiv.classList.remove('error'); hebDiv.classList.add('loading');
+      hebDiv.textContent = 'Loading Hebrew date...';
+
+      const res = await fetchHebrewForKey(key);
+      if(res && res.ok){
+        hebDiv.classList.remove('loading'); hebDiv.classList.remove('error');
+        hebDiv.textContent = res.text;
+      }else{
+        hebDiv.classList.remove('loading'); hebDiv.classList.add('error');
+        hebDiv.textContent = 'Error: Could not retrieve Hebrew date';
+      }
+    }
+
+    /**
+     * updateHebrewDateForKey(key) — sidebar helper (keeps previous functionality)
+     * Uses the same cached fetch and shows loading / value / error under the main date in the panel.
+     */
+    async function updateHebrewDateForKey(key){
+      if(!key){
+        hebrewEl.textContent = '';
+        return;
+      }
+      // Immediately show loading line
+      hebrewEl.textContent = 'Loading Hebrew date...';
+      try{
+        const d = fromKey(key);
+        const human = d.toLocaleDateString(undefined, {year:'numeric', month:'long', day:'numeric'});
+        vwrite(`Fetching Hebrew date for ${human} (sent to Hebcal API)...`);
+      }catch(e){
+        vwrite('Fetching Hebrew date (preparing request)...');
+      }
+
+      const res = await fetchHebrewForKey(key);
+      if(res && res.ok){
+        hebrewEl.textContent = res.text;
+        vwrite(`Hebrew date received: ${res.text}`);
+      }else{
+        hebrewEl.textContent = 'Error: Could not retrieve Hebrew date';
+        vwrite('Error: Hebcal API request failed or returned unexpected data.', false);
+      }
+    }
+
+    // ================= Event panel & actions (unchanged behavior) =================
+    function selectDate(key){
+      state.selectedKey = key;
+      document.querySelectorAll('.day.selected').forEach(d=>d.classList.remove('selected'));
+      const sel = [...document.querySelectorAll('.day')].find(d=>d.dataset.key===key);
+      if(sel) sel.classList.add('selected');
+      renderEventPanel();
+    }
+
+    function renderEventPanel(){
+      const key = state.selectedKey;
+      if(!key){ labelEl.textContent = 'Select a date'; hebrewEl.textContent = ''; listEl.innerHTML=''; return; }
+      const d = fromKey(key);
+      labelEl.textContent = d.toLocaleDateString(undefined, {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+      // Sidebar hebrew uses the same cached fetch
+      updateHebrewDateForKey(key);
+
+      const items = (state.events[key] || []).slice().sort((a,b)=> (a.time||'').localeCompare(b.time||''));
+      listEl.innerHTML = '';
+      if(items.length===0){
+        const empty = document.createElement('div');
+        empty.className = 'sub'; empty.textContent = 'No events yet. Add one below.';
+        listEl.appendChild(empty);
+      }
+      items.forEach(ev => {
+        const li = document.createElement('li');
+        li.className = 'event';
+        li.innerHTML = `
+          <div class="time">${ev.time||''}</div>
+          <div class="content">
+            <div class="title">${escapeHtml(ev.title)}</div>
+            ${ev.notes ? `<div class="notes">${escapeHtml(ev.notes)}</div>` : ''}
+          </div>
+          <div class="spacer"></div>
+          <button class="btn danger" aria-label="Delete" title="Delete" data-id="${ev.id}">✕</button>
+        `;
+        li.querySelector('button').addEventListener('click', ()=> deleteEvent(key, ev.id));
+        listEl.appendChild(li);
+      });
+    }
+
+    function escapeHtml(str){ return String(str).replace(/[&<>"']/g, s=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s])) }
+    form.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      if(!state.selectedKey){ alert('Please select a date in the calendar first.'); return; }
+      const ev = { id: uid(), time: timeInput.value || '', title: titleInput.value.trim(), notes: notesInput.value.trim() };
+      if(!ev.title){ alert('Title is required.'); return; }
+      createEvent(state.selectedKey, ev);
+      form.reset();
+    });
+    clearBtn.addEventListener('click', ()=>{
+      if(!state.selectedKey) return;
+      if(confirm('Delete all events for this day?')){
+        state.events[state.selectedKey] = [];
+        persist();
+        buildCalendar();
+        renderEventPanel();
+      }
+    });
+    function createEvent(key, ev){ if(!state.events[key]) state.events[key]=[]; state.events[key].push(ev); persist(); buildCalendar(); renderEventPanel(); }
+    function deleteEvent(key, id){ const arr = state.events[key] || []; const idx = arr.findIndex(e=>e.id===id); if(idx>-1){ arr.splice(idx,1); persist(); buildCalendar(); renderEventPanel(); } }
+    function uid(){ return Math.random().toString(36).slice(2,10); }
+
+    // ================= Navigation =================
+    prevBtn.addEventListener('click', ()=>{ state.currentMonth = new Date(state.currentMonth.getFullYear(), state.currentMonth.getMonth()-1, 1); buildCalendar(); });
+    nextBtn.addEventListener('click', ()=>{ state.currentMonth = new Date(state.currentMonth.getFullYear(), state.currentMonth.getMonth()+1, 1); buildCalendar(); });
+    todayBtn.addEventListener('click', ()=>{ state.currentMonth = atStartOfMonth(today); buildCalendar(); selectDate(toKey(today)); });
+
+    // ================= Startup & minimal validations =================
+    buildCalendar();
+    // default select today
+    selectDate(toKey(today));
+
+    // Minimal validation run (keeps previous checks brief)
+    function validateCalendar(){
+      const expected = monthLabel(state.currentMonth);
+      const labelOk = monthEl.textContent.trim() === expected;
+      const cellOk = grid.children.length === 42;
+      return labelOk && cellOk;
+    }
+    function runValidations(){
+      let ok = validateCalendar();
+      if(ok) vwrite('PASS: Calendar view rendered (42 cells, label matches).');
+      else { buildCalendar(); vwrite(validateCalendar() ? 'Recovered: Calendar view now correct.' : 'FAIL: Calendar view.', false); }
+    }
+    runValidations();
+
+  </script>
+</body>
+</html>
